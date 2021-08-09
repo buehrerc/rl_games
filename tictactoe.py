@@ -12,7 +12,7 @@ class Player(ABC):
     def choose_action(self, board, possible_actions):
         """
         Function chooses best action based on provided board state and possible actions.
-        :param board: 3x3 matrix, representing the TicTacToe field
+        :param board: 3x3 matrix, representing the RL_games field
         :param possible_actions: possible fields to put next symbol
         :return: chosen action
         """
@@ -25,23 +25,7 @@ class Player(ABC):
 
 
 class RandomPlayer(Player):
-    def __init__(self, name):
-        super().__init__(name)
-
-    def choose_action(self, board, possible_actions):
-        """
-        Function chooses best action based on provided board state and possible actions.
-        :param board: 3x3 matrix, representing the TicTacToe field
-        :param possible_actions: possible fields to put next symbol
-        :return: chosen action
-        """
-        return np.random.choice(possible_actions)
-
-    def receive_feedback(self, winner):
-        """Incorporates feedback from the game round into the policy"""
-        # No implementation needed since player is not a learning agent.
-        pass
-
+    d        sub_table = self.board[i:i+self.WINNING_NUMBER, j:j+WINNING_NUMBER]
 
 class HumanPlayer(Player):
     def __init__(self, name):
@@ -49,7 +33,7 @@ class HumanPlayer(Player):
 
     @staticmethod
     def _print_board(board):
-        """Prints a nicely formatted TicTacToe board."""
+        """Prints a nicely formatted RL_games board."""
         separator = "---------\n"
         output_string = str()
         for row in board.astype(str):
@@ -62,7 +46,7 @@ class HumanPlayer(Player):
     def choose_action(self, board, possible_actions):
         """
         Function chooses best action based on provided board state and possible actions.
-        :param board: 3x3 matrix, representing the TicTacToe field
+        :param board: 3x3 matrix, representing the RL_games field
         :param possible_actions: possible fields to put next symbol
         :return: chosen action
         """
@@ -108,7 +92,7 @@ class QPlayer(Player):
     def choose_action(self, board, possible_actions):
         """
         Function chooses best action based on provided board state and possible actions.
-        :param board: 3x3 matrix, representing the TicTacToe field
+        :param board: 3x3 matrix, representing the RL_games field
         :param possible_actions: possible fields to put next symbol
         :return: chosen action
         """
@@ -219,7 +203,7 @@ class TicTacToe:
 
     def _match_summary(self):
         """
-        Prints a nicely formatted TicTacToe board with the finishing state.
+        Prints a nicely formatted RL_games board with the finishing state.
         :param show_board: True - Prints the borad
                            False - Doesn't print the board
         :return: [The name of the winning player or "Tie" if not winner, nicely formatted board_state]
@@ -272,7 +256,7 @@ if __name__ == '__main__':
     p1_.load_policy('p1_policy')
     # p2_ = QPlayer('p2', alpha=0.1, epsilon=0.1, gamma=0.8)
     # p2_.load_policy('p1_policy')
-    p2_ = RandomPlayer('Ujil')
+    p2_ = RandomPlayer('p2')
     # p2_ = HumanPlayer('Ujil')
 
     print('training...')
