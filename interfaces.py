@@ -51,10 +51,35 @@ class Game(ABC):
         """
         pass
 
-    @abstractmethod
     def play(self):
         """
         Function runs the actual game and give each player the board state and possible actions in each round.
         :return: The name of the winning player or "TIE" if no winner.
         """
-        pass
+        while True:
+            # Player 1's Turn
+            # Get possible actions
+            actions = self._possible_actions()
+            # Let Player 1 take action
+            player_action = self.p1.choose_action(self.board, actions)
+            # Update board accordingly
+            self._update_board(player_action, self.p1)
+            # Check whether game is finished
+            if self._is_finished():
+                break
+
+            # Player 2's Turn
+            # Get possible actions
+            actions = self._possible_actions()
+            # Let Player 2 take action
+            player_action = self.p2.choose_action(self.board, actions)
+            # Update board accordingly
+            self._update_board(player_action, self.p2)
+            # Check whether game is finished
+            if self._is_finished():
+                break
+        winner_name, final_board_state = self._match_summary()
+        # Give feedback to the players about the outcome of the match
+        self.p1.receive_feedback(winner_name)
+        self.p2.receive_feedback(winner_name)
+        return winner_name, final_board_state

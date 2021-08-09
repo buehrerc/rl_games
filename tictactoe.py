@@ -209,31 +209,6 @@ class TicTacToe(Game):
             output_string += ' | '.join(row_formatted) + '\n' + separator
         return winner_name, output_string
 
-    def play(self):
-        """
-        Function runs the actual game and give each player the board state and possible actions in each round.
-        :return: The name of the winning player or "TIE" if no winner.
-        """
-        while True:
-            # Player 1 takes action
-            actions = self._possible_actions()
-            p1_action = self.p1.choose_action(self.board, actions)
-            self._update_board(p1_action, self.p1)
-            if self._is_finished():
-                break
-
-            # Player 2 takes action
-            actions = self._possible_actions()
-            p2_action = self.p2.choose_action(self.board, actions)
-            self._update_board(p2_action, self.p2)
-            if self._is_finished():
-                break
-        winner_name, final_board_state = self._match_summary()
-        # Give feedback to the players about the outcome of the match
-        self.p1.receive_feedback(winner_name)
-        self.p2.receive_feedback(winner_name)
-        return winner_name, final_board_state
-
 
 if __name__ == '__main__':
     """

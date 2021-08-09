@@ -110,42 +110,13 @@ class Connect4(Game):
         output_string += vline
         return winner_name, output_string
 
-    def play(self):
-        while True:
-            # Player 1's Turn
-            # Get possible actions
-            actions = self._possible_actions()
-            # Let Player 1 take action
-            player_action = self.p1.choose_action(self.board, actions)
-            # Update board accordingly
-            self._update_board(player_action, self.p1)
-            # Check whether game is finished
-            if self._is_finished():
-                break
-
-            # Player 2's Turn
-            # Get possible actions
-            actions = self._possible_actions()
-            # Let Player 2 take action
-            player_action = self.p2.choose_action(self.board, actions)
-            # Update board accordingly
-            self._update_board(player_action, self.p2)
-            # Check whether game is finished
-            if self._is_finished():
-                break
-        winner_name, final_board_state = self._match_summary()
-        # Give feedback to the players about the outcome of the match
-        self.p1.receive_feedback(winner_name)
-        self.p2.receive_feedback(winner_name)
-        return winner_name, final_board_state
-
 
 if __name__ == '__main__':
     p1_ = RandomPlayer('p1')
     p2_ = RandomPlayer('p2')
 
     log = list()
-    for i in tqdm(range(1000)):
+    for i in tqdm(range(10)):
         game = Connect4(p1_, p2_)
         winner_, _ = game.play()
         log.append(winner_)
