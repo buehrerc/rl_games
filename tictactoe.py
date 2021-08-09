@@ -25,7 +25,23 @@ class Player(ABC):
 
 
 class RandomPlayer(Player):
-    d        sub_table = self.board[i:i+self.WINNING_NUMBER, j:j+WINNING_NUMBER]
+    def __init__(self, name):
+        super().__init__(name)
+
+    def choose_action(self, board, possible_actions):
+        """
+        Function chooses best action based on provided board state and possible actions.
+        :param board: 3x3 matrix, representing the RL_games field
+        :param possible_actions: possible fields to put next symbol
+        :return: chosen action
+        """
+        return np.random.choice(possible_actions)
+
+    def receive_feedback(self, winner):
+        """Incorporates feedback from the game round into the policy"""
+        # No implementation needed since player is not a learning agent.
+        pass
+
 
 class HumanPlayer(Player):
     def __init__(self, name):
@@ -137,11 +153,11 @@ class QPlayer(Player):
         """Saves current policy"""
         df = pd.DataFrame(self.qtable).T
         df.index = df.index.set_names('index')
-        df.to_csv("{}.csv".format(file_name))
+        df.to_csv("./policies/{}.csv".format(file_name))
 
     def load_policy(self, file_name):
         """Loads policy in file_name"""
-        df = pd.read_csv("{}.csv".format(file_name))
+        df = pd.read_csv("./policies/{}.csv".format(file_name))
         df.set_index('index', inplace=True)
         df.columns = df.columns.astype(int)
         self.qtable = df.to_dict('index')
@@ -253,7 +269,7 @@ if __name__ == '__main__':
     QPlayer('p1', alpha=0.2, epsilon=0.1, gamma=0.95) on frozen self for 1000 rounds
     """
     p1_ = QPlayer('p1', alpha=0.2, epsilon=0.1, gamma=0.8)
-    p1_.load_policy('p1_policy')
+    p1_.load_policy('tictactoe_policy')
     # p2_ = QPlayer('p2', alpha=0.1, epsilon=0.1, gamma=0.8)
     # p2_.load_policy('p1_policy')
     p2_ = RandomPlayer('p2')
@@ -273,5 +289,5 @@ if __name__ == '__main__':
             current_stats = pd.Series(log_round).value_counts()/len(log_round)
             log_total[i] = current_stats.to_dict()
             print(current_stats)
-    p1_.store_policy('p1_policy')
+    p1_.store_policy('tictactoe_policy')
     print('finished')
