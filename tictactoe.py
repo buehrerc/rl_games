@@ -1,27 +1,7 @@
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from abc import ABC, abstractmethod
-
-
-class Player(ABC):
-    def __init__(self, name):
-        self.name = name
-
-    @abstractmethod
-    def choose_action(self, board, possible_actions):
-        """
-        Function chooses best action based on provided board state and possible actions.
-        :param board: 3x3 matrix, representing the RL_games field
-        :param possible_actions: possible fields to put next symbol
-        :return: chosen action
-        """
-        pass
-
-    @abstractmethod
-    def receive_feedback(self, winner):
-        """Incorporates feedback from the game round into the policy"""
-        pass
+from interfaces import Player, Game
 
 
 class RandomPlayer(Player):
@@ -31,7 +11,7 @@ class RandomPlayer(Player):
     def choose_action(self, board, possible_actions):
         """
         Function chooses best action based on provided board state and possible actions.
-        :param board: 3x3 matrix, representing the RL_games field
+        :param board: matrix, representing the RL_games field
         :param possible_actions: possible fields to put next symbol
         :return: chosen action
         """
@@ -163,14 +143,11 @@ class QPlayer(Player):
         self.qtable = df.to_dict('index')
 
 
-class TicTacToe:
+class TicTacToe(Game):
     def __init__(self, p1, p2):
+        super().__init__(p1, p2)
         self.BOARD_ROW, self.BOARD_COL = 3, 3
         self.board = np.zeros((self.BOARD_ROW, self.BOARD_COL), dtype=int)
-        self.p1, self.p2 = p1, p2
-        self.playerSymbol = {p1.name: -1,
-                             p2.name: 1}
-        self.winner = None
 
     def _possible_actions(self):
         """Returns the possible actions on the board"""
@@ -219,9 +196,7 @@ class TicTacToe:
 
     def _match_summary(self):
         """
-        Prints a nicely formatted RL_games board with the finishing state.
-        :param show_board: True - Prints the borad
-                           False - Doesn't print the board
+        Function determines the winner of the game and returns a nicely formatted board
         :return: [The name of the winning player or "Tie" if not winner, nicely formatted board_state]
         """
         separator = "---------\n"
