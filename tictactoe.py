@@ -1,29 +1,23 @@
+"""
+This File holds different kind of Players for TicTacToe
+- HumanPlayer (Human Input based Player)
+- MinimaxPlayer (Minimax plus Alpha-Beta Pruning based Player)
+- MCTSPlayer (Monte Carlo Tree Search based Player)
+- QPlayer (Q-Learning based Player)
+- DQNPlayer (Deep Q-Learning based Player)
+"""
+import torch
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from interfaces import Player, Game
+from players import BasePlayer, BaseMinimaxPlayer, BaseHumanPlayer, RandomPlayer
+from neural_networks import TTTFlatNetwork, TTTConvNetwork
+
+import torch.nn as nn
+import torch.optim as optim
 
 
-class RandomPlayer(Player):
-    def __init__(self, name):
-        super().__init__(name)
-
-    def choose_action(self, board, possible_actions):
-        """
-        Function chooses best action based on provided board state and possible actions.
-        :param board: matrix, representing the RL_games field
-        :param possible_actions: possible fields to put next symbol
-        :return: chosen action
-        """
-        return np.random.choice(possible_actions)
-
-    def receive_feedback(self, winner):
-        """Incorporates feedback from the game round into the policy"""
-        # No implementation needed since player is not a learning agent.
-        pass
-
-
-class HumanPlayer(Player):
+class HumanPlayer(BaseHumanPlayer):
     def __init__(self, name):
         super().__init__(name)
 
@@ -39,20 +33,114 @@ class HumanPlayer(Player):
             output_string += ' | '.join(row_formatted) + '\n' + separator
         print(output_string)
 
+
+class MinimaxPlayer(BaseMinimaxPlayer):
+    """Minimax Player with Alpha-Beta pruning"""
+    def __init__(self, name, depth_limit=7):
+        super().__init__(name, depth_limit=depth_limit)
+
+    def _get_utility_score(self, board):
+        """
+        Returns the utility score for the current board state, according to the following scores:
+        - 3 symbol in the same direction -> 1.0
+        - 2 symbol + 1 empty in the same direction -> 0.2
+        :param board:
+        :return:
+        """
+        utility = 0
+        possible_directions = [row for row in board] + \
+                              [col for col in board.T] + \
+                              [np.diagonal(board), np.diagonal(np.flip(board, axis=1))]
+        for direction in possible_directions:
+            if np.sum(direction == self.symbol) == 3:
+                utility += 1
+            elif np.sum(direction == self.symbol) == 2 and np.sum(direction == 0) == 1:
+                utility += 0.2
+        return utility
+
+    @staticmethod
+    def _perform_action(board, action, symbol):
+        """Updates board with the action that was taken by the player"""
+        tmp_board = board.flatten().copy()
+        tmp_board[action] = symbol
+        return tmp_board.reshape(*board.shape)
+
+    @staticmethod
+    def _is_finished(board):
+        """Check whether game is finished"""
+        # Check whether there is a winner
+        possible_directions = [row for row in board] + \
+                              [col for col in board.transpose()] + \
+                              [np.diagonal(board), np.diagonal(np.flip(board, axis=1))]
+        for direction in possible_directions:
+            if np.all(direction == '1') or np.all(direction == '-1'):
+                return True
+        # Check whether it is a tie
+        if len(np.where(board == 0)[0]) == 0:
+            return True
+        return False
+
+    def _maximize(self, board, possible_actions, depth_limit, alpha, beta):
+        # End Condition
+        if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
+            return None, self._get_utility_score(board)
+        # Explore the nodes
+        max_utility, move = -1, None
+        for i, action in enumerate(possible_actions):
+            # 1. Explore the possible action
+            # Update the board for the current action
+            board_plus_action = self._perform_action(board, action, self.symbol)
+            # Remove the action from the possible actions
+            action_removed = possible_actions[:i] + possible_actions[i+1:]
+            # Explore the possible action
+            _, returned_utility = self._minimize(board_plus_action, action_removed, depth_limit-1, alpha, beta)
+            # 2. Update current best move
+            if max_utility < returned_utility:
+                max_utility = returned_utility
+                move = action
+            # 3. Update Alpha value accordingly
+            if alpha < returned_utility:
+                alpha = returned_utility
+                # Alpha-Beta Pruning Break Condition
+                if alpha > beta:
+                    break
+        return move, max_utility
+
+    def _minimize(self, board, possible_actions, depth_limit, alpha, beta):
+        # End Condition
+        if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
+            return None, self._get_utility_score(board)
+        # Explore the nodes
+        min_utility, move = 2, None
+        for i, action in enumerate(possible_actions):
+            # 1. Explore the possible action
+            # Update the board for the current action
+            board_plus_action = self._perform_action(board, action, self.symbol * -1)
+            # Remove the action from the possible actions
+            action_removed = possible_actions[:i] + possible_actions[i+1:]
+            # Explore the possible action
+            _, returned_utility = self._maximize(board_plus_action, action_removed, depth_limit-1, alpha, beta)
+            # 2. Update current best move
+            if min_utility > returned_utility:
+                min_utility = returned_utility
+                move = action
+            # 3. Update Beta value accordingly
+            if beta > returned_utility:
+                beta = returned_utility
+                # Alpha-Beta Pruning Break Condition
+                if alpha > beta:
+                    break
+        return move, min_utility
+
     def choose_action(self, board, possible_actions):
         """
         Function chooses best action based on provided board state and possible actions.
-        :param board: 3x3 matrix, representing the RL_games field
+        :param board: matrix, representing the RL_games field
         :param possible_actions: possible fields to put next symbol
         :return: chosen action
         """
-        self._print_board(board)
-        while True:
-            user_choice = int(input("Which Field?"))
-            if user_choice in possible_actions:
-                return user_choice
-            else:
-                print('Action not possible!')
+        action, _ = self._maximize(board, possible_actions, self.depth_limit, self.min_alpha, self.max_beta)
+        return action
 
     def receive_feedback(self, winner):
         """Incorporates feedback from the game round into the policy"""
@@ -60,7 +148,7 @@ class HumanPlayer(Player):
         pass
 
 
-class QPlayer(Player):
+class QPlayer(BasePlayer):
     """
     Q-Learning based Player
     For each possible board state a dictionary is maintained. For each possible action in the board state, a Q value
@@ -143,125 +231,142 @@ class QPlayer(Player):
         self.qtable = df.to_dict('index')
 
 
-class TicTacToe(Game):
-    def __init__(self, p1, p2):
-        super().__init__(p1, p2)
-        self.BOARD_ROW, self.BOARD_COL = 3, 3
-        self.board = np.zeros((self.BOARD_ROW, self.BOARD_COL), dtype=int)
+class DQNPlayer(BasePlayer):
+    def __init__(self, name, model, epsilon=0, gamma=0.9, lr=0.01):
+        super().__init__(name)
+        # Initialize all the Player parameters
+        self.ex_rate = epsilon
+        self.decay_gamma = gamma
+        self.lr = lr
+        self.reward = {'win': 100,
+                       'tie': 30,
+                       'lose': -100,
+                       'illegal': torch.tensor(-1000.0)}
+        self.game_history = list()
 
-    def _possible_actions(self):
+        # Initialize all the PyTorch parameters
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model.to(self.device)
+        self.optimizer = optim.AdamW(params=self.model.parameters(), lr=self.lr)
+        self.loss = nn.SmoothL1Loss()
+
+    def _convert_to_tensor(self, board):
+        board = torch.tensor(board)
+        if self.model.architecture == 'conv':
+            empty = torch.zeros(board.shape).masked_scatter_((board == 0), torch.ones(board.shape)).view(1, 3, 3)
+            own_moves = torch.zeros(board.shape).masked_scatter_((board == self.symbol), torch.ones(board.shape)).view(1, 3, 3)
+            op_moves = torch.zeros(board.shape).masked_scatter_((board == self.symbol * -1), torch.ones(board.shape)).view(1, 3, 3)
+            return torch.stack((empty, own_moves, op_moves))
+        elif self.model.architecture == 'flat':
+            return board.flatten().type(torch.float32)
+
+    def _illegal_actions(self, board):
         """Returns the possible actions on the board"""
-        return np.where(self.board.reshape(self.BOARD_ROW*self.BOARD_COL) == 0)[0].tolist()
+        if self.model.architecture == 'conv':
+            return torch.where(board[0] == 0)[0].tolist()
+        elif self.model.architecture == 'flat':
+            return torch.where(board != 0)[0].tolist()
 
-    def _update_board(self, action, player):
-        """Updates board with the action that was taken by the player"""
-        tmp_board = self.board.reshape(self.BOARD_ROW * self.BOARD_COL).copy()
-        tmp_board[action] = self.playerSymbol[player.name]
-        self.board = tmp_board.reshape(self.BOARD_ROW, self.BOARD_COL)
-
-    def _check_on_board(self, direction):
+    def choose_action(self, board, possible_actions):
         """
-        Checks whether in the current direction all values are the same (-1 or 1)
-        :param direction: Current slice of the board which is inspected
-        :return: True if a winner was found, else False
+        Function chooses best action based on provided board state and possible actions.
+        :param board: matrix, representing the RL_games field
+        :param possible_actions: possible fields to put next symbol
+        :return: chosen action
         """
-        if np.all(direction == self.playerSymbol[self.p1.name]):
-            self.winner = self.p1
-            return True
-        elif np.all(direction == self.playerSymbol[self.p2.name]):
-            self.winner = self.p2
-            return True
+        tensor_board = self._convert_to_tensor(board)
+        # Do exploration with probability of ex_rate
+        if np.random.rand() <= self.ex_rate:
+            action = np.random.choice(possible_actions)
+        # Otherwise, pick action with highest Q value
+        # Break ties randomly
         else:
-            return False
+            while True:
+                #with torch.no_grad():
+                output = self.model(tensor_board)
+                action = int(np.argmax(output.detach().numpy()))
+                # If the network chooses a wrong action, it will be punished immediately
+                if action not in possible_actions:
+                    self.model.train()
+                    # Clear previously calculated gradients
+                    self.model.zero_grad()
+                    self.optimizer.zero_grad()
+                    # Compute the expected output
+                    expected_output = torch.zeros(9)
+                    # TODO: Is this the correct Q-Value for the possible actions?
+                    expected_output[possible_actions] = 5.0
+                    # Compute the expected output and its corresponding loss
+                    expected_output = torch.where(expected_output == 0, self.reward['illegal'], expected_output)
+                    loss = self.loss(output, expected_output)
+                    # Back propagate to calculate the gradients
+                    loss.backward()
+                    # clip the the gradients to 1.0. It helps in preventing the exploding gradient problem
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    # update parameters
+                    self.optimizer.step()
+                # Else the action will be chosen and returned
+                else:
+                    break
+        self.game_history.append((tensor_board, action))
+        return action
 
-    def _is_finished(self):
-        """Check whether game is finished"""
-        # Horizontal
-        for row in self.board:
-            if self._check_on_board(row) is True:
-                return True
-        # Vertical
-        for col in self.board.transpose():
-            if self._check_on_board(col) is True:
-                return True
-        # Diagonal
-        for diag in [np.diagonal(self.board), np.diagonal(np.flip(self.board, axis=1))]:
-            if self._check_on_board(diag) is True:
-                return True
-        # Tie
-        if len(self._possible_actions()) == 0:
-            self.winner = False
-            return True
-        return False
+    def receive_feedback(self, winner):
+        """Incorporates feedback from the game round into the policy"""
+        # Compute the reward
+        if winner == self.name:
+            reward = self.reward['win']
+        elif winner == 'Tie':
+            reward = self.reward['tie']
+        else:
+            reward = self.reward['lose']
 
-    def _match_summary(self):
-        """
-        Function determines the winner of the game and returns a nicely formatted board
-        :return: [The name of the winning player or "Tie" if not winner, nicely formatted board_state]
-        """
-        separator = "---------\n"
-        output_string = str()
-        winner_name = 'Tie' if self.winner is False else self.winner.name
-        for row in self.board.astype(str):
-            row = np.where(row == '1', 'O', row)
-            row = np.where(row == '-1', 'X', row)
-            row_formatted = np.where(row == '0', ' ', row)
-            output_string += ' | '.join(row_formatted) + '\n' + separator
-        return winner_name, output_string
+        self.model.train()
+        for board_state, action in reversed(self.game_history):
+            # Clear previously calculated gradients
+            self.model.zero_grad()
+            self.optimizer.zero_grad()
+            # Get model predictions for the board_state
+            output = self.model(board_state)
+            # Compute the expected output
+            expected_output = torch.zeros(9)
+            expected_output[action] = self.lr * (self.decay_gamma * reward)
+            # For the illegal moves, the negative reward is set
+            expected_output[self._illegal_actions(board_state)] = self.reward['illegal']
+            # Compute the expected output and its corresponding loss
+            loss = self.loss(output, expected_output)
+            # Back propagate to calculate the gradients
+            loss.backward()
+            # clip the the gradients to 1.0. It helps in preventing the exploding gradient problem
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+            # update parameters
+            self.optimizer.step()
+        # Reset game history
+        self.game_history = list()
 
-    def play(self):
-        """
-        Function runs the actual game and give each player the board state and possible actions in each round.
-        :return: The name of the winning player or "TIE" if no winner.
-        """
-        while True:
-            # Player 1's Turn
-            # Get possible actions
-            actions = self._possible_actions()
-            # Let Player 1 take action
-            player_action = self.p1.choose_action(self.board, actions)
-            # Update board accordingly
-            self._update_board(player_action, self.p1)
-            # Check whether game is finished
-            if self._is_finished():
-                break
+    def store_policy(self, name):
+        """Saves the networks weights."""
+        torch.save(self.model.state_dict(), r'./policies/{}.pt'.format(name))
 
-            # Player 2's Turn
-            # Get possible actions
-            actions = self._possible_actions()
-            # Let Player 2 take action
-            player_action = self.p2.choose_action(self.board, actions)
-            # Update board accordingly
-            self._update_board(player_action, self.p2)
-            # Check whether game is finished
-            if self._is_finished():
-                break
-        winner_name, final_board_state = self._match_summary()
-        # Give feedback to the players about the outcome of the match
-        self.p1.receive_feedback(winner_name)
-        self.p2.receive_feedback(winner_name)
-        return winner_name, final_board_state
+    def load_policy(self, name):
+        self.model.load_state_dict(torch.load(r'./policies/{}.pt'.format(name)))
 
 
 if __name__ == '__main__':
+    from game import TicTacToe
     """
     Training Documentation
-    QPlayer('p1', alpha=0.2, epsilon=0.5, gamma=0.95) on RandomPlayer for 1000 rounds
-    QPlayer('p1', alpha=0.2, epsilon=0.3, gamma=0.95) on frozen self for 1000 rounds
-    QPlayer('p1', alpha=0.2, epsilon=0.1, gamma=0.95) on RandomPlayer for 3000 rounds
-    QPlayer('p1', alpha=0.2, epsilon=0.1, gamma=0.95) on frozen self for 1000 rounds
+    QPlayer('p1', alpha=0.2, epsilon=0.2, gamma=0.9) on RandomPlayer for 20000 rounds
+    QPlayer('p1', alpha=0.2, epsilon=0.1, gamma=0.9) on MinimaxPlayer(depth_limit=5) for 1000 rounds
     """
-    p1_ = QPlayer('p1', alpha=0.2, epsilon=0.1, gamma=0.8)
-    p1_.load_policy('tictactoe_policy')
-    # p2_ = QPlayer('p2', alpha=0.1, epsilon=0.1, gamma=0.8)
-    # p2_.load_policy('p1_policy')
-    p2_ = RandomPlayer('p2')
-    # p2_ = HumanPlayer('Ujil')
+    p1_ = DQNPlayer('p1', TTTConvNetwork(), epsilon=0.4, gamma=0.9, lr=0.01)
+    p2_ = QPlayer('p2', epsilon=0, alpha=0, gamma=0.9)
+    p2_.load_policy('tictactoe_q_policy')
+    # p2_ = MinimaxPlayer('p2', depth_limit=5)
 
     print('training...')
     log_round = list()
     log_total = dict()
-    for i in tqdm(range(4000)):
+    for i in tqdm(range(10000)):
         game = TicTacToe(p1_, p2_)
         winner_, _ = game.play()
         log_round.append(winner_)
@@ -272,5 +377,5 @@ if __name__ == '__main__':
             current_stats = pd.Series(log_round).value_counts()/len(log_round)
             log_total[i] = current_stats.to_dict()
             print(current_stats)
-    p1_.store_policy('tictactoe_policy')
+    p1_.store_policy('tictactoe_dqn_policy')
     print('finished')
