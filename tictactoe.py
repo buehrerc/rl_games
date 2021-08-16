@@ -232,7 +232,11 @@ class QPlayer(BasePlayer):
 
 
 class DQNPlayer(BasePlayer):
-    def __init__(self, name, model, epsilon=0, gamma=0.9, lr=0.01):
+    """
+    Deep Q-Learning based Player
+    Source: https://arxiv.org/pdf/1312.5602.pdf
+    """
+    def __init__(self, name, model, epsilon=0.1, gamma=0.9, lr=0.01):
         super().__init__(name)
         # Initialize all the Player parameters
         self.ex_rate = epsilon
@@ -344,38 +348,18 @@ class DQNPlayer(BasePlayer):
         self.game_history = list()
 
     def store_policy(self, name):
-        """Saves the networks weights."""
+        """Saves the networks weights"""
         torch.save(self.model.state_dict(), r'./policies/{}.pt'.format(name))
 
     def load_policy(self, name):
+        """Loads policy from input name"""
         self.model.load_state_dict(torch.load(r'./policies/{}.pt'.format(name)))
 
 
 if __name__ == '__main__':
     from game import TicTacToe
-    """
-    Training Documentation
-    QPlayer('p1', alpha=0.2, epsilon=0.2, gamma=0.9) on RandomPlayer for 20000 rounds
-    QPlayer('p1', alpha=0.2, epsilon=0.1, gamma=0.9) on MinimaxPlayer(depth_limit=5) for 1000 rounds
-    """
-    p1_ = DQNPlayer('p1', TTTConvNetwork(), epsilon=0.4, gamma=0.9, lr=0.01)
-    p2_ = QPlayer('p2', epsilon=0, alpha=0, gamma=0.9)
-    p2_.load_policy('tictactoe_q_policy')
-    # p2_ = MinimaxPlayer('p2', depth_limit=5)
+    p1_ = DQNPlayer('p1', TTTConvNetwork(), epsilon=0.3, gamma=0.9, lr=0.01)
+    p2_ = MinimaxPlayer('p2', depth_limit=5)
 
-    print('training...')
-    log_round = list()
-    log_total = dict()
-    for i in tqdm(range(10000)):
-        game = TicTacToe(p1_, p2_)
-        winner_, _ = game.play()
-        log_round.append(winner_)
-        game = TicTacToe(p2_, p1_)
-        winner_, _ = game.play()
-        log_round.append(winner_)
-        if i % 100 == 0 and i != 0:
-            current_stats = pd.Series(log_round).value_counts()/len(log_round)
-            log_total[i] = current_stats.to_dict()
-            print(current_stats)
-    p1_.store_policy('tictactoe_dqn_policy')
-    print('finished')
+    game = TicTacToe(p1_, p2_)
+    winner_, _ = game.play()
