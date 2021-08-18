@@ -11,6 +11,7 @@ import itertools
 import numpy as np
 import pandas as pd
 from players import BasePlayer, BaseMinimaxPlayer, BaseHumanPlayer, RandomPlayer
+from game import Connect4
 
 
 class HumanPlayer(BaseHumanPlayer):
@@ -361,16 +362,19 @@ class DQNPlayer(BasePlayer):
 
 class MCTSPlayer(BasePlayer):
     """Monte Carlo Tree Search based Player"""
-    # TODO: Currently, the backpropagation doesn't go back to the initial board state.
     def __init__(self, name):
         super().__init__(name)
-        self.hash_columns = ['wins', 'simulations', 'is_leaf',
-                             'action_0', 'action_1', 'action_2', 'action_3', 'action_4', 'action_5', 'action_6']
-        # Tree is implemented in a Pandas DataFrame
-        self.hash_table = pd.DataFrame(columns=self.hash_columns)
         self.BOARD_ROW, self.BOARD_COL = 6, 7
         self.WINNING_NUMBER = 4
+
+        # Tree is implemented in a Pandas DataFrame
+        self.hash_columns = ['wins', 'simulations', 'last_simulation', 'is_leaf',
+                             'action_0', 'action_1', 'action_2', 'action_3', 'action_4', 'action_5', 'action_6']
+        self.hash_table = pd.DataFrame(columns=self.hash_columns)
         self.hash_separator = '/'
+
+        # The game history is used for the backpropagation between the different board states of the game
+        self.game_history = list()
 
     def _hash_board_state(self, board):
         """Function flattens board matrix and converts it to a string"""
@@ -505,8 +509,9 @@ class MCTSPlayer(BasePlayer):
             _, simulation_result = self._run_mcts(self._unhash_board_state(next_child_hash), symbol * -1)
         # Do 4) BACKPROPAGATION step
         # Update own entries
-        self.hash_table.loc[hashed_board, 'wins'] = self.hash_table.at[hashed_board, 'wins'] + simulation_result
-        self.hash_table.loc[hashed_board, 'simulations'] = self.hash_table.at[hashed_board, 'simulations'] + 1
+        self.hash_table.loc[hashed_board, 'last_simulation'] = simulation_result
+        self.hash_table.loc[hashed_board, 'wins'] += simulation_result
+        self.hash_table.loc[hashed_board, 'simulations'] += 1
         return action, simulation_result
 
     def choose_action(self, board, possible_actions, return_probabilities=False):
@@ -519,6 +524,8 @@ class MCTSPlayer(BasePlayer):
         :return: chosen action
         """
         hash_board = self._hash_board_state(board)
+        # Update game history
+        self.game_history.append(hash_board)
         if hash_board not in self.hash_table.index:
             self.hash_table.loc[hash_board] = {col: None for col in self.hash_columns}
             self.hash_table.loc[hash_board, 'wins'] = 0
@@ -555,14 +562,21 @@ class MCTSPlayer(BasePlayer):
 
     def receive_feedback(self, winner):
         """Incorporates feedback from the game round into the policy"""
-        # No implementation needed
-        pass
+        # Go through all board states and backpropagate the results to all the preceding board state nodes
+        num_simulations = 1
+        for parent, child in zip(reversed(self.game_history[:-1]), reversed(self.game_history)):
+            # Backpropagate the results to all the preceding board state nodes
+            self.hash_table.loc[parent, 'last_simulation'] += self.hash_table.at[child, 'last_simulation']
+            self.hash_table.loc[parent, 'wins'] += self.hash_table.at[child, 'last_simulation']
+            self.hash_table.loc[parent, 'simulations'] += num_simulations
+            num_simulations += 1
+        # Reset Game History
+        self.game_history = list()
 
 
 if __name__ == '__main__':
-    from tqdm import tqdm
-    from game import Connect4
     p1_ = MCTSPlayer('p1')
     p2_ = RandomPlayer('p2')
     game_ = Connect4(p1_, p2_)
     game_.play()
+    print('Finished...')
