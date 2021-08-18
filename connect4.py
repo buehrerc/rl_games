@@ -8,8 +8,9 @@ import torch.nn as nn
 import torch.optim as optim
 import itertools
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
 from players import BasePlayer, BaseMinimaxPlayer, BaseHumanPlayer, RandomPlayer
-from neural_networks import C4PolicyNetwork, C4QNetwork
 
 
 class HumanPlayer(BaseHumanPlayer):
@@ -120,7 +121,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
             return None, self._get_utility_score(board)
         # Explore the nodes
-        max_utility, move = -1, None
+        max_utility, move = float('-inf'), None
         for i, action in enumerate(possible_actions):
             # 1. Explore the possible action
             # Update the board for the current action
@@ -146,7 +147,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
             return None, self._get_utility_score(board)
         # Explore the nodes
-        min_utility, move = 2, None
+        min_utility, move = float('inf'), None
         for i, action in enumerate(possible_actions):
             # 1) Explore the possible action
             # 1.1) Update the board for the current action
@@ -354,11 +355,214 @@ class DQNPlayer(BasePlayer):
         self.policy_model.load_state_dict(torch.load(r'./policies/{}_p.pt'.format(name)))
 
 
+class MCTSPlayer(BasePlayer):
+    """Monte Carlo Tree Search based Player"""
+    def __init__(self, name):
+        super().__init__(name)
+        self.hash_columns = ['wins', 'simulations', 'is_leaf',
+                             'action_0', 'action_1', 'action_2', 'action_3', 'action_4', 'action_5', 'action_6']
+        # Tree is implemented in a Pandas DataFrame
+        self.hash_table = pd.DataFrame(columns=self.hash_columns)
+        self.BOARD_ROW, self.BOARD_COL = 6, 7
+        self.WINNING_NUMBER = 4
+        self.hash_separator = '/'
+
+    def _hash_board_state(self, board):
+        """Function flattens board matrix and converts it to a string"""
+        return self.hash_separator.join(board.flatten().astype(str))
+
+    def _unhash_board_state(self, hashed_board):
+        """Function reshapes hash to a board matrix"""
+        return np.array(hashed_board.split(self.hash_separator), dtype=int).reshape(self.BOARD_ROW, self.BOARD_COL)
+
+    @staticmethod
+    def _update_board(board, action, symbol):
+        """Function puts the token to the lowest free spot in the picked column"""
+        picked_column = board[:, action]
+        # Determine last cell which has value zero and set the player token there
+        picked_column[np.where(picked_column == 0)[0][-1]] = symbol
+        # Insert the picked column back into the board
+        board[:, action] = picked_column
+        return board
+
+    def _is_finished(self, board):
+        """Check whether game is finished"""
+        # Check if there is a winner
+        possible_directions = [board[i:i + self.WINNING_NUMBER, j]
+                               for i, j in itertools.product(range(self.BOARD_ROW - self.WINNING_NUMBER + 1),
+                                                             range(self.BOARD_COL))] + \
+                              [board[i, j:j + self.WINNING_NUMBER]
+                               for i, j in itertools.product(range(self.BOARD_ROW),
+                                                             range(self.BOARD_COL - self.WINNING_NUMBER + 1))] + \
+                              [np.diagonal(board[i:i + self.WINNING_NUMBER, j:j + self.WINNING_NUMBER])
+                               for i, j in itertools.product(range(self.BOARD_ROW - self.WINNING_NUMBER + 1),
+                                                             range(self.BOARD_COL - self.WINNING_NUMBER + 1))] + \
+                              [np.diagonal(np.flip(board[i:i + self.WINNING_NUMBER, j:j + self.WINNING_NUMBER], axis=1))
+                               for i, j in itertools.product(range(self.BOARD_ROW - self.WINNING_NUMBER + 1),
+                                                             range(self.BOARD_COL - self.WINNING_NUMBER + 1))]
+        for direction in possible_directions:
+            if np.all(direction == self.symbol):
+                return 1
+            elif np.all(direction == self.symbol * -1):
+                return 0
+        # Check if there is a Tie
+        if len(np.where(board.flatten() == 0)[0]) == 0:
+            return 0.2
+        # Game is not finished by now
+        return -1
+
+    def _next_board_states(self, board, symbol):
+        """Determines the possible next board states based on board"""
+        next_board_states = dict()
+        for action, col in enumerate(board.T):
+            # Check whether action is possible
+            if any(col == 0):
+                next_board_states[action] = self._update_board(board.copy(), action, symbol)
+        return next_board_states
+
+    def _update_current_node(self, hashed_current_board, next_board_states):
+        """Updates the next nodes of current node"""
+        for action, next_board in next_board_states.items():
+            self.hash_table.at[hashed_current_board, 'action_{}'.format(action)] = self._hash_board_state(next_board)
+
+    def _generate_next_nodes(self, next_board_states):
+        """Initializes the new board states using a list of hashes"""
+        for next_board in next_board_states:
+            next_board_hashed = self._hash_board_state(next_board)
+            next_board_result = self._is_finished(next_board)
+            self.hash_table.loc[next_board_hashed] = pd.Series({
+                'wins': next_board_result if next_board_result != -1 else 0,
+                'simulations': 0,
+                'is_leaf': True if next_board_result != -1 else False,
+                'action_0': None,
+                'action_1': None,
+                'action_2': None,
+                'action_3': None,
+                'action_4': None,
+                'action_5': None,
+                'action_6': None})
+
+    def _perform_simulation(self, board, next_symbol):
+        """Performs simulation of the current board state with two RandomPlayers"""
+        if next_symbol == 1:
+            # Board symbols have to be changed, because game always starts with -1
+            board *= -1
+        if next_symbol == self.symbol:
+            game = Connect4(RandomPlayer('self'), RandomPlayer('opponent'))
+        else:
+            game = Connect4(RandomPlayer('opponent'), RandomPlayer('self'))
+        game.board = board.copy()
+        winner, _ = game.play()
+        if winner == 'opponent':
+            return 0
+        elif winner == 'Tie':
+            return 0.2
+        elif winner == 'self':
+            return 1
+        else:
+            raise Exception('Winner Type {} is unknown.'.format(winner))
+
+    def _run_mcts(self, board, symbol):
+        """
+        Runs the Monte Carlo Tree Search Algorithm in recursive fashion
+        1) Selection
+        2) Expansion
+        3) Simulation
+        4) Backpropagation
+        :param board: current board state
+        :param symbol: current symbol to insert to board
+        :return: action, simulation result (1 if win, 0.2 if tie & 0 if lose)
+        """
+        hashed_board = self._hash_board_state(board)
+        # Get children
+        children = self.hash_table.loc[hashed_board, ['action_0', 'action_1', 'action_2', 'action_3',
+                                                      'action_4', 'action_5', 'action_6']].to_numpy()
+        # If the current node is a leaf, returns its result
+        if self.hash_table.at[hashed_board, 'is_leaf'] is True:
+            action = None,
+            simulation_result = self.hash_table.at[hashed_board, 'wins']
+        # If all children are None -> proceed with 2) EXPANSION step
+        elif set(children) == {None}:
+            # Get next board states
+            next_board_states = self._next_board_states(board, symbol)
+            # Update current root
+            self._update_current_node(hashed_board, next_board_states)
+            # Generate the next nodes
+            self._generate_next_nodes(next_board_states.values())
+            # Do 3) SIMULATION step
+            action = np.random.choice(list(next_board_states.keys()))
+            simulation_result = self._perform_simulation(next_board_states[action], symbol * -1)
+        # Else another do another 1) SELECTION step
+        else:
+            # Randomly pick the next action
+            action = np.random.choice(np.where(children != None)[0])
+            next_child_hash = children[action]
+            _, simulation_result = self._run_mcts(self._unhash_board_state(next_child_hash), symbol * -1)
+        # Do 4) BACKPROPAGATION step
+        # Update own entries
+        self.hash_table.loc[hashed_board, 'wins'] = self.hash_table.at[hashed_board, 'wins'] + simulation_result
+        self.hash_table.loc[hashed_board, 'simulations'] = self.hash_table.at[hashed_board, 'simulations'] + 1
+        return action, simulation_result
+
+    def choose_action(self, board, possible_actions, return_probabilities=False):
+        """
+        Function chooses best action based on provided board state and possible actions.
+        :param board: matrix, representing the RL_games field
+        :param possible_actions: possible fields to put next symbol
+        :param return_probabilities: If True, win/sims ration of each action will be passed
+                                     If False, only the chosen action will be returned
+        :return: chosen action
+        """
+        hash_board = self._hash_board_state(board)
+        if hash_board not in self.hash_table.index:
+            self.hash_table.loc[hash_board] = {col: None for col in self.hash_columns}
+            self.hash_table.loc[hash_board, 'wins'] = 0
+            self.hash_table.loc[hash_board, 'simulations'] = 0
+            self.hash_table.loc[hash_board, 'is_leaf'] = False
+        action, _ = self._run_mcts(board, self.symbol)
+        # Return the correct values
+        if return_probabilities is True:
+            children = self.hash_table.loc[hash_board, ['action_0', 'action_1', 'action_2', 'action_3',
+                                                        'action_4', 'action_5', 'action_6']].to_numpy()
+            probabilities = list()
+            for child in children:
+                if child is None:
+                    probabilities.append(0)
+                else:
+                    try:
+                        probabilities.append(self.hash_table.at[child, 'wins']/self.hash_table.at[child, 'simulations'])
+                    except ZeroDivisionError:
+                        probabilities.append(0)
+            return action
+        else:
+            return action
+
+    def store_policy(self, file_name):
+        """Saves current policy"""
+        self.hash_table.index = self.hash_table.index.set_names('index')
+        self.hash_table.to_csv("./policies/{}.csv".format(file_name))
+
+    def load_policy(self, file_name):
+        """Loads policy in file_name"""
+        df = pd.read_csv("./policies/{}.csv".format(file_name))
+        df.set_index('index', inplace=True)
+        self.hash_table = df
+
+    def receive_feedback(self, winner):
+        """Incorporates feedback from the game round into the policy"""
+        # No implementation needed
+        pass
+
+
 if __name__ == '__main__':
     from game import Connect4
-    p1_ = DQNPlayer('p1', C4PolicyNetwork(), C4QNetwork())
-    p2_ = MinimaxPlayer('p2', depth_limit=5)
+    # p1_ = DQNPlayer('p1', C4PolicyNetwork(), C4QNetwork())
+    p1_ = MCTSPlayer('p1')
+    p2_ = RandomPlayer('p2')
 
-    game = Connect4(p1_, p2_)
-    _, board_ = game.play()
-    print(board_)
+    for i in tqdm(range(1000)):
+        game_ = Connect4(p1_, p2_)
+        _, board_ = game_.play()
+        game_ = Connect4(p2_, p1_)
+        _, board_ = game_.play()
+    p1_.store_policy(r'connect4_mcts_policy')

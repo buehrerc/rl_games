@@ -7,24 +7,8 @@ import torch
 import torch.nn as nn
 
 
-class TTTFlatNetwork(nn.Module):
-    def __init__(self):
-        super(TTTFlatNetwork, self).__init__()
-        self.flat_seq = nn.Sequential(
-            nn.Linear(9, 64),
-            nn.LeakyReLU(),
-            nn.Linear(64, 64),
-            nn.LeakyReLU(),
-            nn.Linear(64, 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 9),
-        )
-        self.architecture = 'flat'
-
-    def forward(self, x):
-        return self.flat_seq(x)
-
-
+# ----------------------------------------------------------------------------------------------------------------------
+# TICTACTOE NETWORKS
 class TTTConvNetwork(nn.Module):
     def __init__(self):
         super(TTTConvNetwork, self).__init__()
@@ -38,26 +22,56 @@ class TTTConvNetwork(nn.Module):
             nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=(1, 1), padding=1),
             nn.BatchNorm2d(32),
             nn.LeakyReLU(),
-            nn.MaxPool2d(kernel_size=(3, 3), stride=(1, 1))
         )
-        self.seq_ = nn.Sequential(
-            nn.Linear(864, 864),
-            nn.LeakyReLU(),
-            nn.Linear(864, 864),
-            nn.LeakyReLU(),
-            nn.Linear(864, 432),
-            nn.LeakyReLU(),
-            nn.Linear(432, 75),
-            nn.LeakyReLU(),
-            nn.Linear(75, 9)
-        )
-        self.architecture = 'conv'
 
     def forward(self, x):
-        x = self.seq_conv(x)
-        return self.seq_lin(x.flatten())
+        return self.seq_conv(x)
 
 
+class TTTPolicyNetwork(nn.Module):
+    def __init__(self):
+        super(TTTPolicyNetwork, self).__init__()
+        self.conv_network = TTTConvNetwork()
+        self.seq_policy = nn.Sequential(
+            nn.Conv2d(in_channels=32, out_channels=3, kernel_size=(1, 1), stride=(1, 1)),
+            nn.BatchNorm2d(3),
+            nn.LeakyReLU(),
+            nn.Flatten(0, -1),
+            nn.Linear(225, 225),
+            nn.Dropout(0.2),
+            nn.LeakyReLU(),
+            nn.Linear(225, 64),
+            nn.LeakyReLU(),
+            nn.Linear(64, 9),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        x = self.conv_network(x)
+        return self.seq_policy(x)
+
+
+class TTTQNetwork(nn.Module):
+    def __init__(self):
+        super(TTTQNetwork, self).__init__()
+        self.conv_network = TTTConvNetwork()
+        self.seq_value = nn.Sequential(
+            nn.Conv2d(in_channels=32, out_channels=3, kernel_size=(1, 1), stride=(1, 1)),
+            nn.BatchNorm2d(3),
+            nn.LeakyReLU(),
+            nn.Flatten(0, -1),
+            nn.Linear(225, 32),
+            nn.LeakyReLU(),
+            nn.Linear(32, 1),
+        )
+
+    def forward(self, x):
+        x = self.conv_network(x)
+        return self.seq_value(x)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# CONNECT4 NETWORKS
 class C4ConvNetwork(nn.Module):
     def __init__(self):
         super(C4ConvNetwork, self).__init__()

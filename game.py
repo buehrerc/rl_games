@@ -160,7 +160,7 @@ class Connect4(Game):
 
     def _possible_actions(self):
         """Returns all possible action based on the current board state"""
-        return [idx_col for idx_col, col in enumerate(self.board.T) if len(np.where(col == 0)[0]) > 0]
+        return [idx_col for idx_col, col in enumerate(self.board.T) if any(col == 0)]
 
     def _update_board(self, chosen_action, by_player):
         """Function puts the token to the lowest free spot in the picked column"""
@@ -251,6 +251,7 @@ class Connect4(Game):
             # Check whether game is finished
             if self._is_finished():
                 break
+
         winner_name, final_board_state = self._match_summary()
         # Give feedback to the players about the outcome of the match
         self.p1.receive_feedback(winner_name)
