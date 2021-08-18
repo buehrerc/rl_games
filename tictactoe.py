@@ -1,8 +1,7 @@
 """
-This File holds different kind of Players for TicTacToe
+This file holds different kind of Players for TicTacToe
 - HumanPlayer (Human Input based Player)
 - MinimaxPlayer (Minimax plus Alpha-Beta Pruning based Player)
-- MCTSPlayer (Monte Carlo Tree Search based Player)
 - QPlayer (Q-Learning based Player)
 - DQNPlayer (Deep Q-Learning based Player)
 """
@@ -81,6 +80,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         return False
 
     def _maximize(self, board, possible_actions, depth_limit, alpha, beta):
+        """Maximize step of the Minimax algorithm"""
         # End Condition
         if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
             return None, self._get_utility_score(board)
@@ -107,6 +107,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         return move, max_utility
 
     def _minimize(self, board, possible_actions, depth_limit, alpha, beta):
+        """Minimize step of the Minimax algorithm"""
         # End Condition
         if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
             return None, self._get_utility_score(board)
@@ -151,8 +152,6 @@ class MinimaxPlayer(BaseMinimaxPlayer):
 class QPlayer(BasePlayer):
     """
     Q-Learning based Player
-    For each possible board state a dictionary is maintained. For each possible action in the board state, a Q value
-    is updated.
     """
     def __init__(self, name, epsilon=0.3, alpha=0.2, gamma=0.9):
         """
@@ -235,7 +234,6 @@ class DQNPlayer(BasePlayer):
     """
     Deep Q-Learning based Player
     Source: https://arxiv.org/pdf/1312.5602.pdf
-
     """
     def __init__(self, name, policy_model, q_model, epsilon=0.1, gamma=0.9, lr=0.01):
         """
@@ -394,4 +392,4 @@ if __name__ == '__main__':
     p2_ = MinimaxPlayer('p2', depth_limit=5)
 
     game = TicTacToe(p1_, p2_)
-    winner_, _ = game.play()
+    game.play()

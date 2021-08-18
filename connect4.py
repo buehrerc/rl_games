@@ -1,6 +1,7 @@
 """
-This File holds different kind of Players for Connect4
+This file holds different kind of Players for Connect4
 - MinimaxPlayer (Minimax plus Alpha-Beta Pruning based Player)
+- MCTSPlayer (Monte Carlo Tree Search based Player)
 - DQNPlayer (Deep Q-Learning based Player)
 """
 import torch
@@ -9,7 +10,6 @@ import torch.optim as optim
 import itertools
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from players import BasePlayer, BaseMinimaxPlayer, BaseHumanPlayer, RandomPlayer
 
 
@@ -50,7 +50,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         - 3 consecutive: 0.2
         Note that the player's performance solely relies on the utility function
         """
-        # TODO: Utility function should hold negative values as well and incorporates strategies
+        # TODO: Extend utility function, in order to increase the performance
         utility = 0
         possible_directions = [row for row in board] + \
                               [col for col in board.T] + \
@@ -117,6 +117,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         return False
 
     def _maximize(self, board, possible_actions, depth_limit, alpha, beta):
+        """Maximize Step of Minimax Algorithm"""
         # End Condition
         if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
             return None, self._get_utility_score(board)
@@ -143,6 +144,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         return move, max_utility
 
     def _minimize(self, board, possible_actions, depth_limit, alpha, beta):
+        """Minimize Step of Minimax Algorithm"""
         # End Condition
         if depth_limit == 0 or len(possible_actions) == 0 or self._is_finished(board):
             return None, self._get_utility_score(board)
@@ -174,6 +176,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         :param actions: [0, 1, 2, 3, 4, 5, 6]
         :return: [3, 4, 2, 5, 1, 6, 0]
         """
+        # TODO: The preference is hard-coded -> insert some randomness to prevent transparency towards opponent
         if len(actions) == 1:
             return actions
         else:
@@ -186,7 +189,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         :param possible_actions: possible fields to put next symbol
         :return: chosen action
         """
-        # prefer actions which are in center
+        # Prefer actions which are in center
         possible_actions = self._rearrange_possible_actions(possible_actions)
         action, _ = self._maximize(board, possible_actions, self.depth_limit, self.min_alpha, self.max_beta)
         return action
@@ -200,7 +203,7 @@ class MinimaxPlayer(BaseMinimaxPlayer):
 class DQNPlayer(BasePlayer):
     """
     Deep Q-Learning based Player
-    Source: https://arxiv.org/pdf/1312.5602.pdf
+    Source: https://arxiv.org/pdf/1312.5602.pdf, https://www.nature.com/articles/nature16961
 
     The Player holds a neural network for the Q-value prediction and a neural netowrk for the policy prediction.
     """
@@ -234,6 +237,7 @@ class DQNPlayer(BasePlayer):
         self.policy_loss = nn.BCELoss()
 
     def _convert_to_tensor(self, board):
+        """Function converts board matrix into a tensor."""
         board = torch.tensor(board)
         empty = torch.zeros(board.shape).masked_scatter_((board == 0), torch.ones(board.shape)).view(1, 6, 7)
         own_moves = torch.zeros(board.shape).masked_scatter_((board == self.symbol), torch.ones(board.shape)).view(1, 6, 7)
@@ -277,7 +281,7 @@ class DQNPlayer(BasePlayer):
         Currently, the expected policy is designed as follows:
         - if move lead to positive reward -> 1 at chosen move, 0 otherwise
         - if move lead to negative reward -> 1 at every legal move, 0 otherwise
-        TODO: Compute the expected policy using MiniMax or MCTS
+        TODO: Compute the expected policy using MiniMax or MCTS (https://www.nature.com/articles/nature16961)
         """
         expected_output = torch.zeros(7)
         # Taken action lead to win
@@ -357,6 +361,7 @@ class DQNPlayer(BasePlayer):
 
 class MCTSPlayer(BasePlayer):
     """Monte Carlo Tree Search based Player"""
+    # TODO: Currently, the backpropagation doesn't go back to the initial board state.
     def __init__(self, name):
         super().__init__(name)
         self.hash_columns = ['wins', 'simulations', 'is_leaf',
@@ -555,14 +560,9 @@ class MCTSPlayer(BasePlayer):
 
 
 if __name__ == '__main__':
+    from tqdm import tqdm
     from game import Connect4
-    # p1_ = DQNPlayer('p1', C4PolicyNetwork(), C4QNetwork())
     p1_ = MCTSPlayer('p1')
     p2_ = RandomPlayer('p2')
-
-    for i in tqdm(range(1000)):
-        game_ = Connect4(p1_, p2_)
-        _, board_ = game_.play()
-        game_ = Connect4(p2_, p1_)
-        _, board_ = game_.play()
-    p1_.store_policy(r'connect4_mcts_policy')
+    game_ = Connect4(p1_, p2_)
+    game_.play()

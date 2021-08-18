@@ -1,9 +1,12 @@
 """
-This File holds different kind of neural networks for different players
-- TTTFlatNetwork
-- TTTConvNetwork
+This file holds different kind of neural networks for different players
+- Tictactoe
+    + TTTPolicyNetwork
+    + TTTQNetwork
+- Connect4
+    + C4PolicyNetwork
+    + C4QNetwork
 """
-import torch
 import torch.nn as nn
 
 

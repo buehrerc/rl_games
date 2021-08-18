@@ -1,5 +1,5 @@
 """
-This File holds different kind of Games
+This file holds different kind of Games
 - TicTacToe
 - Connect 4
 """

@@ -1,5 +1,5 @@
 """
-This File holds different kind of Player interfaces
+This file holds different kind of Player interfaces
 - BasePlayer
 - BaseMinimaxPlayer
 - BaseHumanPlayer
@@ -68,23 +68,6 @@ class BaseMinimaxPlayer(BasePlayer, ABC):
         """
         pass
 
-    @abstractmethod
-    def choose_action(self, board, possible_actions):
-        """
-        Function chooses best action based on provided board state and possible actions.
-        :param board: matrix, representing the RL_games field
-        :param possible_actions: possible fields to put next symbol
-        :return: chosen action
-        """
-        action, _ = self._maximize(board, possible_actions, self.depth_limit, self.min_alpha, self.max_beta)
-        return action
-
-    @abstractmethod
-    def receive_feedback(self, winner):
-        """Incorporates feedback from the game round into the policy"""
-        # No implementation needed since player is not a learning agent.
-        pass
-
 
 class BaseHumanPlayer(BasePlayer, ABC):
     def __init__(self, name):
@@ -110,11 +93,6 @@ class BaseHumanPlayer(BasePlayer, ABC):
                 return user_choice
             else:
                 print('Action not possible!')
-
-    def receive_feedback(self, winner):
-        """Incorporates feedback from the game round into the policy"""
-        # No implementation needed since player is not a learning agent.
-        pass
 
 
 class RandomPlayer(BasePlayer):

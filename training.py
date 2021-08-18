@@ -1,10 +1,11 @@
 """
-This files holds all functions to train the different players
+This file holds all functions to train the different players
 - TicTacToe
     + QPlayer
     + DQNPlayer
 - Connect4
     + DQNPlayer
+    + MCTSPlayer
 """
 import pandas as pd
 from tqdm import tqdm
@@ -74,6 +75,7 @@ def run_connect4_training_session(player1, player2, rounds):
         game = Connect4(player2, player1)
         winner, _ = game.play()
         training_log.append(winner)
+    print('End Training Session')
     return pd.Series(training_log).value_counts()/len(training_log)
 
 
@@ -88,5 +90,14 @@ def train_connect4_DQNPlayer():
     p1.store_policy(r'connect4_dqn_policy')
 
 
+def train_connect4_MCTS():
+    from connect4 import MCTSPlayer, RandomPlayer
+    p1 = MCTSPlayer('p1')
+    p2 = RandomPlayer('p2')
+    print(run_connect4_training_session(p1, p2, 1000))
+
+    p1.store_policy(r'connect4_mcts_policy')
+
+
 if __name__ == '__main__':
-    train_tictactoe_DQNPlayer()
+    train_connect4_MCTS()
