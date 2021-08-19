@@ -40,7 +40,6 @@ def train_tictactoe_QPlayer():
     p1.alpha = 0.1
     p2 = MinimaxPlayer('p2', depth_limit=5)
     print(run_tictactoe_training_session(p1, p2, 1000))
-
     p1.store_policy(r'tictactoe_q_policy')
 
 
@@ -58,7 +57,6 @@ def train_tictactoe_DQNPlayer():
     p2 = QPlayer('p1', alpha=0, epsilon=0, gamma=0.9)
     p2.load_policy(r'tictactoe_q_policy')
     print(run_tictactoe_training_session(p1, p2, 1000))
-
     p1.store_policy(r'tictactoe_dqn_policy')
 
 
@@ -86,7 +84,6 @@ def train_connect4_DQNPlayer():
     p1 = DQNPlayer('p1', C4PolicyNetwork(), C4QNetwork(), epsilon=0.2, gamma=0.9, lr=0.05)
     p2 = MinimaxPlayer('p2', depth_limit=5)
     print(run_connect4_training_session(p1, p2, 100))
-
     p1.store_policy(r'connect4_dqn_policy')
 
 
@@ -94,8 +91,7 @@ def train_connect4_MCTS():
     from connect4 import MCTSPlayer, RandomPlayer
     p1 = MCTSPlayer('p1')
     p2 = RandomPlayer('p2')
-    print(run_connect4_training_session(p1, p2, 1000))
-
+    print(run_connect4_training_session(p1, p2, 50))
     p1.store_policy(r'connect4_mcts_policy')
 
 

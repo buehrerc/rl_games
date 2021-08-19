@@ -94,6 +94,10 @@ class BaseHumanPlayer(BasePlayer, ABC):
             else:
                 print('Action not possible!')
 
+    def receive_feedback(self, winner):
+        """Incorporates feedback from the game round into the policy"""
+        pass
+
 
 class RandomPlayer(BasePlayer):
     def __init__(self, name):

@@ -201,165 +201,6 @@ class MinimaxPlayer(BaseMinimaxPlayer):
         pass
 
 
-class DQNPlayer(BasePlayer):
-    """
-    Deep Q-Learning based Player
-    Source: https://arxiv.org/pdf/1312.5602.pdf, https://www.nature.com/articles/nature16961
-
-    The Player holds a neural network for the Q-value prediction and a neural netowrk for the policy prediction.
-    """
-    def __init__(self, name, policy_model, q_model, epsilon=0.1, gamma=0.9, lr=0.01):
-        """
-        :param name: Name of the player
-        :param policy_model: NN for Action policy
-        :param q_model: NN for Q value prediction
-        :param epsilon: Exploration Rate
-        :param gamma: Reward decay
-        :param lr: Learning Rate
-        """
-        super().__init__(name)
-        # Initialize all the Player parameters
-        self.ex_rate = epsilon
-        self.decay_gamma = gamma
-        self.lr = lr
-        self.reward = {'win': 100,
-                       'tie': 30,
-                       'lose': -100,
-                       'illegal': torch.tensor(-1000.0)}
-        self.game_history = list()
-
-        # Initialize all the PyTorch parameters
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.q_model = q_model.to(self.device)
-        self.q_optimizer = optim.AdamW(params=self.q_model.parameters(), lr=self.lr)
-        self.q_loss = nn.MSELoss()
-        self.policy_model = policy_model.to(self.device)
-        self.policy_optimizer = optim.AdamW(params=self.policy_model.parameters(), lr=self.lr)
-        self.policy_loss = nn.BCELoss()
-
-    def _convert_to_tensor(self, board):
-        """Function converts board matrix into a tensor."""
-        board = torch.tensor(board)
-        empty = torch.zeros(board.shape).masked_scatter_((board == 0), torch.ones(board.shape)).view(1, 6, 7)
-        own_moves = torch.zeros(board.shape).masked_scatter_((board == self.symbol), torch.ones(board.shape)).view(1, 6, 7)
-        op_moves = torch.zeros(board.shape).masked_scatter_((board == self.symbol * -1), torch.ones(board.shape)).view(1, 6, 7)
-        return torch.stack((empty, own_moves, op_moves))
-
-    def choose_action(self, board, possible_actions):
-        """
-        Function chooses best action based on provided board state and possible actions.
-        :param board: matrix, representing the RL_games field
-        :param possible_actions: possible fields to put next symbol
-        :return: chosen action
-        """
-        tensor_board = self._convert_to_tensor(board)
-        # Do exploration with probability of ex_rate
-        if np.random.rand() <= self.ex_rate:
-            action = np.random.choice(possible_actions)
-        # Otherwise, pick action with highest Q value
-        else:
-            while True:
-                pred_policy = self.policy_model(tensor_board)
-                action = int(np.argmax(pred_policy.detach().numpy()))
-                # If the network chooses a wrong action, the policy network will be punished immediately
-                if action not in possible_actions:
-                    # Optimize the action policy network accordingly
-                    self._optimize_policy_network(tensor_board, action, self.reward['illegal'])
-                # Else the action will be chosen and returned
-                else:
-                    break
-        self.game_history.append((tensor_board, action))
-        return action
-
-    @staticmethod
-    def _legal_actions(board):
-        """Finds all legal actions that could be taken on the board."""
-        return [i for i, col in enumerate(board[0, 0].T) if any(col == 1)]
-
-    def _compute_expected_policy(self, board_state, action, reward):
-        """
-        Computes the expected policy the policy network should produced.
-        Currently, the expected policy is designed as follows:
-        - if move lead to positive reward -> 1 at chosen move, 0 otherwise
-        - if move lead to negative reward -> 1 at every legal move, 0 otherwise
-        TODO: Compute the expected policy using MiniMax or MCTS (https://www.nature.com/articles/nature16961)
-        """
-        expected_output = torch.zeros(7)
-        # Taken action lead to win
-        if reward > 0:
-            expected_output[action] = 1
-        else:
-            # For the remaining legal moves, the 1 is set
-            expected_output[self._legal_actions(board_state)] = 1
-            # 0 for the chosen action
-            expected_output[action] = 0
-        return expected_output
-
-    def _optimize_policy_network(self, board_state, action, reward):
-        """Updates the Action policy network"""
-        # 1) Clear previously calculated gradients
-        self.policy_model.zero_grad()
-        self.policy_optimizer.zero_grad()
-        # 2) Get model predictions for the board_state
-        pred_policy = self.policy_model(board_state)
-        # 3) Compute the expected output
-        expected_policy = self._compute_expected_policy(board_state, action, reward)
-        # 4) Compute the loss
-        policy_loss = self.policy_loss(pred_policy, expected_policy)
-        # 5) Backward propagate the loss
-        policy_loss.backward()
-        # 6) pdate parameters
-        self.policy_optimizer.step()
-
-    def _optimize_q_network(self, board_state, reward):
-        """Updates the Q value network"""
-        # 1) Clear previously calculated gradients
-        self.q_model.zero_grad()
-        self.q_optimizer.zero_grad()
-        # 2) Get model predictions for the board_state
-        pred_q_value = self.q_model(board_state)
-        # 3) Compute the expected output
-        expected_q_value = reward
-        # 4) Compute the loss
-        q_loss = self.q_loss(pred_q_value, expected_q_value)
-        # 5) Backward propagate the loss
-        q_loss.backward()
-        # 6) pdate parameters
-        self.q_optimizer.step()
-
-    def receive_feedback(self, winner):
-        """Incorporates feedback from the game round into the policy"""
-        # Compute the reward
-        if winner == self.name:
-            reward = torch.tensor(self.reward['win'], dtype=torch.float32)
-        elif winner == 'Tie':
-            reward = torch.tensor(self.reward['tie'], dtype=torch.float32)
-        else:
-            reward = torch.tensor(self.reward['lose'], dtype=torch.float32)
-
-        self.policy_model.train()
-        self.q_model.train()
-        for board_state, action in reversed(self.game_history):
-            # 1) Optimize the policy network
-            self._optimize_policy_network(board_state, action, reward)
-            # 2) Optimize the Q network
-            self._optimize_q_network(board_state, reward)
-            # 3) Update Reward for the next round
-            reward *= self.decay_gamma
-        # Reset game history
-        self.game_history = list()
-
-    def store_policy(self, name):
-        """Saves the both networks weights"""
-        torch.save(self.q_model.state_dict(), r'./policies/{}_q.pt'.format(name))
-        torch.save(self.policy_model.state_dict(), r'./policies/{}_p.pt'.format(name))
-
-    def load_policy(self, name):
-        """Loads policy and Q-value network from input name"""
-        self.q_model.load_state_dict(torch.load(r'./policies/{}_q.pt'.format(name)))
-        self.policy_model.load_state_dict(torch.load(r'./policies/{}_p.pt'.format(name)))
-
-
 class MCTSPlayer(BasePlayer):
     """Monte Carlo Tree Search based Player"""
     def __init__(self, name):
@@ -514,7 +355,7 @@ class MCTSPlayer(BasePlayer):
         self.hash_table.loc[hashed_board, 'simulations'] += 1
         return action, simulation_result
 
-    def choose_action(self, board, possible_actions, return_probabilities=False):
+    def choose_action(self, board, possible_actions=None, return_probabilities=False):
         """
         Function chooses best action based on provided board state and possible actions.
         :param board: matrix, representing the RL_games field
@@ -574,8 +415,193 @@ class MCTSPlayer(BasePlayer):
         self.game_history = list()
 
 
+class DQNPlayer(BasePlayer):
+    """
+    Deep Q-Learning based Player
+    Source: https://arxiv.org/pdf/1312.5602.pdf
+    The Player holds a neural network for the Q-value prediction and a neural netowrk for the policy prediction.
+    """
+    def __init__(self, name, policy_model, q_model, epsilon=0.1, gamma=0.9, lr=0.01):
+        """
+        :param name: Name of the player
+        :param policy_model: NN for Action policy
+        :param q_model: NN for Q value prediction
+        :param epsilon: Exploration Rate
+        :param gamma: Reward decay
+        :param lr: Learning Rate
+        """
+        super().__init__(name)
+        # Initialize all the Player parameters
+        self.ex_rate = epsilon
+        self.decay_gamma = gamma
+        self.lr = lr
+        self.reward = {'win': 100,
+                       'tie': 30,
+                       'lose': -100,
+                       'illegal': torch.tensor(-1000.0)}
+        self.game_history = list()
+
+        # Initialize all the PyTorch parameters
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.q_model = q_model.to(self.device)
+        self.q_optimizer = optim.AdamW(params=self.q_model.parameters(), lr=self.lr)
+        self.q_loss = nn.MSELoss()
+        self.policy_model = policy_model.to(self.device)
+        self.policy_optimizer = optim.AdamW(params=self.policy_model.parameters(), lr=self.lr)
+        self.policy_loss = nn.BCELoss()
+
+    def _convert_to_tensor(self, board):
+        """Function converts board matrix into a tensor."""
+        board = torch.tensor(board)
+        empty = torch.zeros(board.shape).masked_scatter_((board == 0), torch.ones(board.shape)).view(1, 6, 7)
+        own_moves = torch.zeros(board.shape).masked_scatter_((board == self.symbol), torch.ones(board.shape)).view(1, 6, 7)
+        op_moves = torch.zeros(board.shape).masked_scatter_((board == self.symbol * -1), torch.ones(board.shape)).view(1, 6, 7)
+        return torch.stack((empty, own_moves, op_moves))
+
+    def choose_action(self, board, possible_actions):
+        """
+        Function chooses best action based on provided board state and possible actions.
+        :param board: matrix, representing the RL_games field
+        :param possible_actions: possible fields to put next symbol
+        :return: chosen action
+        """
+        tensor_board = self._convert_to_tensor(board)
+        # Do exploration with probability of ex_rate
+        if np.random.rand() <= self.ex_rate:
+            action = np.random.choice(possible_actions)
+        # Otherwise, pick action with highest Q value
+        else:
+            while True:
+                pred_policy = self.policy_model(tensor_board)
+                action = int(np.argmax(pred_policy.detach().numpy()))
+                # If the network chooses a wrong action, the policy network will be punished immediately
+                if action not in possible_actions:
+                    # Optimize the action policy network accordingly
+                    self._optimize_policy_network(tensor_board, action, self.reward['illegal'])
+                # Else the action will be chosen and returned
+                else:
+                    break
+        self.game_history.append((tensor_board, action))
+        return action
+
+    @staticmethod
+    def _legal_actions(board):
+        """Finds all legal actions that could be taken on the board."""
+        return [i for i, col in enumerate(board[0, 0].T) if any(col == 1)]
+
+    def _compute_expected_policy(self, board_state, action, reward):
+        """
+        Computes the expected policy the policy network should produced.
+        Currently, the expected policy is designed as follows:
+        - if move lead to positive reward -> 1 at chosen move, 0 otherwise
+        - if move lead to negative reward -> 1 at every legal move, 0 otherwise
+        """
+        expected_output = torch.zeros(7)
+        # Taken action lead to win
+        if reward > 0:
+            expected_output[action] = 1
+        else:
+            # For the remaining legal moves, the 1 is set
+            expected_output[self._legal_actions(board_state)] = 1
+            # 0 for the chosen action
+            expected_output[action] = 0
+        return expected_output
+
+    def _optimize_policy_network(self, board_state, action, reward):
+        """Updates the Action policy network"""
+        # 1) Clear previously calculated gradients
+        self.policy_model.zero_grad()
+        self.policy_optimizer.zero_grad()
+        # 2) Get model predictions for the board_state
+        pred_policy = self.policy_model(board_state)
+        # 3) Compute the expected output
+        expected_policy = self._compute_expected_policy(board_state, action, reward)
+        # 4) Compute the loss
+        policy_loss = self.policy_loss(pred_policy, expected_policy)
+        # 5) Backward propagate the loss
+        policy_loss.backward()
+        # 6) pdate parameters
+        self.policy_optimizer.step()
+
+    def _optimize_q_network(self, board_state, reward):
+        """Updates the Q value network"""
+        # 1) Clear previously calculated gradients
+        self.q_model.zero_grad()
+        self.q_optimizer.zero_grad()
+        # 2) Get model predictions for the board_state
+        pred_q_value = self.q_model(board_state)
+        # 3) Compute the expected output
+        expected_q_value = reward
+        # 4) Compute the loss
+        q_loss = self.q_loss(pred_q_value, expected_q_value)
+        # 5) Backward propagate the loss
+        q_loss.backward()
+        # 6) pdate parameters
+        self.q_optimizer.step()
+
+    def receive_feedback(self, winner):
+        """Incorporates feedback from the game round into the policy"""
+        # Compute the reward
+        if winner == self.name:
+            reward = torch.tensor(self.reward['win'], dtype=torch.float32)
+        elif winner == 'Tie':
+            reward = torch.tensor(self.reward['tie'], dtype=torch.float32)
+        else:
+            reward = torch.tensor(self.reward['lose'], dtype=torch.float32)
+
+        self.policy_model.train()
+        self.q_model.train()
+        for board_state, action in reversed(self.game_history):
+            # 1) Optimize the policy network
+            self._optimize_policy_network(board_state, action, reward)
+            # 2) Optimize the Q network
+            self._optimize_q_network(board_state, reward)
+            # 3) Update Reward for the next round
+            reward *= self.decay_gamma
+        # Reset game history
+        self.game_history = list()
+
+    def store_policy(self, name):
+        """Saves the both networks weights"""
+        torch.save(self.q_model.state_dict(), r'./policies/{}_q.pt'.format(name))
+        torch.save(self.policy_model.state_dict(), r'./policies/{}_p.pt'.format(name))
+
+    def load_policy(self, name):
+        """Loads policy and Q-value network from input name"""
+        self.q_model.load_state_dict(torch.load(r'./policies/{}_q.pt'.format(name)))
+        self.policy_model.load_state_dict(torch.load(r'./policies/{}_p.pt'.format(name)))
+
+
+class AlphaGoPlayer(DQNPlayer):
+    """
+    Deep Q-Learning in Combination with Monte Carlo Tree Search based Player
+    Source: https://arxiv.org/pdf/1312.5602.pdf, https://www.nature.com/articles/nature16961
+    The Player holds a neural network for the Q-value prediction and a neural netowrk for the policy prediction.
+    """
+    def __init__(self, name, policy_model, q_model, epsilon=0.1, gamma=0.9, lr=0.01):
+        super().__init__(name, policy_model, q_model, epsilon, gamma, lr)
+        # Initialize internal Monte Carlo Tree Search Player
+        self.mcts = MCTSPlayer('internal')
+        self.mcts.load_policy(r'connect4_mcts_policy')
+        self.mcts.set_symbol(self.symbol)
+
+    def _convert_tensor_to_board(self, tensor_board):
+        """Converts the tensor representation of the board into the matrix board format."""
+        return (tensor_board[1] * self.symbol + tensor_board[1] * self.symbol * -1).squeeze(0).numpy()
+
+    def _compute_expected_policy(self, board_state, action, reward):
+        """
+        Computes the expected policy the policy network should produced.
+        The expected values are extracted from the Monte Carlo Tree Search based Player
+        """
+        board = self._convert_tensor_to_board(board_state)
+        _, expected_policy = self.mcts.choose_action(board, return_probabilities=True)
+        return expected_policy
+
+
 if __name__ == '__main__':
-    p1_ = MCTSPlayer('p1')
+    from neural_networks import C4PolicyNetwork, C4QNetwork
+    p1_ = AlphaGoPlayer('p1', C4PolicyNetwork(), C4QNetwork())
     p2_ = RandomPlayer('p2')
     game_ = Connect4(p1_, p2_)
     game_.play()
